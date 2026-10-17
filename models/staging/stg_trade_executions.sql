@@ -1,9 +1,16 @@
 -- One row per execution event on a CFD position (open, close, SL/TP modify, swap).
--- Source arrives as text; this model only casts, renames and drops constant columns.
+-- Source arrives as text from every export file; this model keeps each execution
+-- once (from the latest export), then casts, renames and drops constant columns.
 
 with source as (
 
     select * from {{ source('broker', 'leveraged_trades') }}
+
+),
+
+deduplicated as (
+
+    {{ latest_export_rows('source', '"Exec Id"') }}
 
 ),
 
@@ -42,7 +49,7 @@ renamed as (
         -- dropped: Account Id (identifier), Account type (always CFD),
         --          Fee (always 0), gsl (always false)
 
-    from source
+    from deduplicated
 
 )
 

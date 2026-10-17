@@ -31,11 +31,15 @@ Two CSV exports from the broker, placed in `data/`:
 
 | Source | Grain | Rows (to 16.10.2026) |
 |---|---|---|
-| `leveraged_trades_history_all_*.csv` | one row per execution event on a position (open / close / modify / swap) | 2,687 |
-| `funds_history_all_*.csv` | one row per cash movement, with running balance | 843 |
+| `leveraged_trades_history_*.csv` | one row per execution event on a position (open / close / modify / swap) | 2,687 |
+| `funds_history_*.csv` | one row per cash movement, with running balance | 843 |
 
 The raw files are **not committed** (they contain account identifiers). To run the
 project, drop your own exports with the same file names into `data/`.
+
+Exports arrive monthly and every file stays in `data/`. They overlap, so staging
+merges them and keeps each execution / ledger row once, taken from the most recent
+export (date parsed from the `_till_DD.MM.YYYY` file name).
 
 ## Project structure
 

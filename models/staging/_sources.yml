@@ -2,15 +2,17 @@ version: 2
 
 sources:
   - name: broker
-    description: Raw CSV exports from the broker (CFD account). Files live in data/.
+    description: >
+      Raw CSV exports from the broker (CFD account). Every monthly export stays in data/;
+      the exports overlap and are deduplicated in staging (latest export wins).
     tables:
       - name: leveraged_trades
         description: One row per execution event (open, close, modify, swap) on a position.
         config:
           meta:
-            external_location: "read_csv('data/leveraged_trades_history_all_*.csv', header=true, all_varchar=true)"
+            external_location: "read_csv('data/leveraged_trades_history_*.csv', header=true, all_varchar=true, filename=true, union_by_name=true)"
       - name: funds_history
         description: Cash ledger - deposits, withdrawals, realized trade P&L, swaps, rebates - with running balance.
         config:
           meta:
-            external_location: "read_csv('data/funds_history_all_*.csv', header=true, all_varchar=true)"
+            external_location: "read_csv('data/funds_history_*.csv', header=true, all_varchar=true, filename=true, union_by_name=true)"

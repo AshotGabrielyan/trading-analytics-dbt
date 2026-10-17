@@ -1,9 +1,16 @@
 -- One row per cash movement on the account ledger, with the broker's running balance.
--- DECLINED rows are kept (flagged) so staging stays 1:1 with the source.
+-- Each ledger row is kept once (from the latest export). DECLINED rows are kept and
+-- flagged so nothing is silently dropped here.
 
 with source as (
 
     select * from {{ source('broker', 'funds_history') }}
+
+),
+
+deduplicated as (
+
+    {{ latest_export_rows('source', '"Id"') }}
 
 ),
 
@@ -30,7 +37,7 @@ renamed as (
         -- dropped: Quantity, Regulatory fees, Taxes (always empty), Commission (always 0 or empty), ISIN (always '-'),
         --          Instrument Name (available on executions), Account type (always CFD)
 
-    from source
+    from deduplicated
 
 )
 

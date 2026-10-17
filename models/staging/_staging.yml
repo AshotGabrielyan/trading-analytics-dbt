@@ -4,7 +4,8 @@ models:
   - name: stg_trade_executions
     description: >
       One row per execution event on a CFD position, cast and renamed from
-      `broker.leveraged_trades`. Every status is kept: OPENED, CLOSED, MODIFIED
+      `broker.leveraged_trades`. Overlapping monthly exports are merged: each
+      execution is kept once, from the most recent export. Every status is kept: OPENED, CLOSED, MODIFIED
       (SL/TP change), SWAP (overnight financing), CASH_ADJUSTMENT_COMMODITIES and
       MODIFY_REJECT. Timestamps are naive UTC.
     columns:
@@ -64,7 +65,7 @@ models:
   - name: stg_fund_transactions
     description: >
       One row per cash movement on the account ledger, cast and renamed from
-      `broker.funds_history`. DECLINED rows are kept and flagged with
+      `broker.funds_history`, deduplicated across exports (latest export wins). DECLINED rows are kept and flagged with
       `is_processed = false`; they do not affect the balance and are excluded
       downstream.
     columns:
