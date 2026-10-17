@@ -1,0 +1,19 @@
+instrument_symbol,asset_class
+BTC/USD,crypto
+BNB/USD,crypto
+XRP/USD,crypto
+ADA/USD,crypto
+DOGE/USD,crypto
+Oil - Crude,commodity
+Natural Gas,commodity
+Gold,commodity
+Silver,commodity
+Copper,commodity
+US Cocoa,commodity
+EUR/USD,fx
+CAD/CHF,fx
+NVDA,equity
+TSLA,equity
+AAPL,equity
+MRNA,equity
+US100,index

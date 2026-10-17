@@ -1,0 +1,23 @@
+version: 2
+
+seeds:
+  - name: instrument_asset_classes
+    description: >
+      Manual mapping of broker instrument symbols to an asset class. The broker
+      exports have no such field. Add a row here when a new instrument is traded;
+      the relationships test on dim_instruments fails until you do.
+    config:
+      column_types:
+        instrument_symbol: varchar
+        asset_class: varchar
+    columns:
+      - name: instrument_symbol
+        description: Broker instrument symbol.
+        data_tests: [unique, not_null]
+      - name: asset_class
+        description: crypto / commodity / fx / equity / index.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [crypto, commodity, fx, equity, index]

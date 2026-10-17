@@ -1,0 +1,37 @@
+name: trading_analytics
+version: "0.1.0"
+config-version: 2
+
+profile: trading_analytics
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+vars:
+  # First day of the calendar spine (dim_dates). Must be on or before the first
+  # trade / ledger event; the relationships tests to dim_dates fail otherwise.
+  calendar_start_date: "2024-05-28"
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  trading_analytics:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds:
+  trading_analytics:
+    +schema: seeds

@@ -1,0 +1,29 @@
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# DuckDB warehouse files
+warehouse/*.duckdb
+warehouse/*.duckdb.wal
+
+# Raw personal data (contains account identifiers) - see README
+data/*.csv
+
+# Python / OS / editors
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+.ipynb_checkpoints/
+
+# Metabase app database (local only: holds dashboards, cached field values, admin login)
+metabase/data/
+metabase/.admin_credentials
+
+# AI assistant files (local only)
+CLAUDE.md
+CLAUDE.local.md
+.claude/

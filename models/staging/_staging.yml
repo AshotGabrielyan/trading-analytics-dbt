@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: stg_trade_executions
+    description: >
+      One row per execution event on a CFD position, cast and renamed from
+      `broker.leveraged_trades`. Every status is kept: OPENED, CLOSED, MODIFIED
+      (SL/TP change), SWAP (overnight financing), CASH_ADJUSTMENT_COMMODITIES and
+      MODIFY_REJECT. Timestamps are naive UTC.
+    columns:
+      - name: exec_id
+        description: Unique id of the execution event. Primary key.
+        data_tests: [unique, not_null]
+      - name: position_id
+        description: Broker "Trade Id". Groups every event that belongs to one position.
+        data_tests: [not_null]
+      - name: order_id
+        description: Order behind the execution. Present only on OPENED and CLOSED rows.
+      - name: instrument_symbol
+        description: Broker instrument symbol, e.g. `Oil - Crude`, `BTC/USD`.
+        data_tests: [not_null]
+      - name: instrument_name
+        description: Long instrument name.
+      - name: instrument_currency
+        description: Currency the instrument is quoted in (all USD except CAD/CHF).
+      - name: execution_status
+        description: Type of event.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [OPENED, CLOSED, MODIFIED, SWAP, CASH_ADJUSTMENT_COMMODITIES, MODIFY_REJECT]
+      - name: execution_source
+        description: What triggered the event. On CLOSED rows this is the exit reason.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [USER, SL, TP, SYSTEM, CLOSE_OUT]
+      - name: order_type
+        description: Time-in-force of the order (IOC = market, GTC = resting SL/TP order).
+      - name: quantity
+        description: Signed size. Positive = buy, negative = sell.
+      - name: quantity_direction
+        description: "`long` if quantity > 0, `short` if < 0, null if 0. Direction of this execution, not of the position."
+      - name: price
+        description: Execution price in instrument currency.
+      - name: take_profit
+        description: Take-profit level attached to the position at this event.
+      - name: stop_loss
+        description: Stop-loss level attached to the position at this event.
+      - name: realized_pnl_local
+        description: Realized P&L in instrument currency. Use `realized_pnl_usd` for analysis.
+      - name: realized_pnl_usd
+        description: Realized P&L converted to account currency (USD). Non-zero only on CLOSED rows.
+      - name: swap_local
+        description: Overnight financing in instrument currency (SWAP rows only).
+      - name: swap_usd
+        description: Overnight financing converted to USD (SWAP rows only).
+      - name: executed_at_utc
+        description: Execution time, UTC.
+        data_tests: [not_null]
+
+  - name: stg_fund_transactions
+    description: >
+      One row per cash movement on the account ledger, cast and renamed from
+      `broker.funds_history`. DECLINED rows are kept and flagged with
+      `is_processed = false`; they do not affect the balance and are excluded
+      downstream.
+    columns:
+      - name: fund_transaction_id
+        description: Broker ledger row id. Primary key.
+        data_tests: [unique, not_null]
+      - name: transaction_type
+        description: Kind of cash movement.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [TRADE, SWAP, DEPOSIT, REBATE, WITHDRAWAL, NEGATIVE_BALANCE_PROTECTION, CASH_ADJUSTMENT_COMMODITIES, TRADE_CORRECTION]
+      - name: transaction_status
+        description: Broker processing status.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [PROCESSED, DECLINED]
+      - name: is_processed
+        description: True when the movement actually hit the balance.
+        data_tests: [not_null]
+      - name: amount_usd
+        description: Signed amount in USD. Positive = credit, negative = debit.
+        data_tests: [not_null]
+      - name: balance_usd
+        description: Account balance reported by the broker after this movement.
+        data_tests: [not_null]
+      - name: currency
+        description: Ledger currency (always USD).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [USD]
+      - name: broker_trade_ref
+        description: Raw broker reference on TRADE rows, `<exec id>_<suffix>`.
+      - name: exec_id
+        description: Execution that produced this cash movement. Populated on TRADE rows only.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_trade_executions')
+                field: exec_id
+      - name: instrument_symbol
+        description: Instrument on TRADE rows.
+      - name: modified_at_utc
+        description: Time the movement was booked, UTC. Orders the running balance.
+        data_tests: [not_null]

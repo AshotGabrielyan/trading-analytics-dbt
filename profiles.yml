@@ -1,0 +1,9 @@
+# Kept in the repo on purpose: DuckDB is a local file, so there are no secrets.
+# dbt finds this file automatically when you run commands from the project root.
+trading_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: warehouse/trading.duckdb
+      threads: 4

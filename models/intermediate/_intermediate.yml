@@ -1,0 +1,167 @@
+version: 2
+
+models:
+  - name: int_positions
+    description: >
+      One row per position. Combines the OPENED execution, all CLOSED executions
+      (partial closes), overnight swaps and broker cash adjustments into a single
+      record with entry, exit, hold time and P&L. Net P&L = realized + swaps + adjustments.
+    columns:
+      - name: position_id
+        description: Broker "Trade Id". Primary key.
+        data_tests: [unique, not_null]
+      - name: instrument_symbol
+        description: Instrument traded.
+        data_tests: [not_null]
+      - name: side
+        description: Direction of the position, from the sign of the opening execution.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [long, short]
+      - name: position_size
+        description: Absolute size opened, in instrument units.
+      - name: open_price
+        description: Entry price.
+      - name: avg_close_price
+        description: Size-weighted average exit price across all closes.
+      - name: initial_stop_loss
+        description: Stop-loss set on the opening execution, if any.
+      - name: initial_take_profit
+        description: Take-profit set on the opening execution, if any.
+      - name: stop_loss_timing
+        description: >
+          When the position first had a stop-loss: 'at open' (on the opening execution),
+          'added later' (set by a modification), or 'never'.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['at open', 'added later', 'never']
+      - name: take_profit_timing
+        description: When the position first had a take-profit, same values as stop_loss_timing.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['at open', 'added later', 'never']
+      - name: opened_at_utc
+        description: Entry time, UTC.
+        data_tests: [not_null]
+      - name: first_closed_at_utc
+        description: Time of the first (possibly partial) close, UTC.
+      - name: closed_at_utc
+        description: Time of the final close, UTC.
+        data_tests: [not_null]
+      - name: hold_hours
+        description: Hours between open and final close.
+      - name: exit_reason
+        description: What triggered the final close. USER = manual, SL = stop-loss, TP = take-profit, CLOSE_OUT = margin close-out by the broker.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [USER, SL, TP, CLOSE_OUT, SYSTEM]
+      - name: n_closes
+        description: Number of CLOSED executions (more than 1 = partially closed).
+      - name: is_partially_closed
+        description: True if the position was closed in more than one execution.
+      - name: n_modifications
+        description: Number of SL/TP changes while the position was open.
+      - name: n_swaps
+        description: Number of overnight financing charges.
+      - name: realized_pnl_usd
+        description: Realized trading P&L in USD, summed over all closes.
+        data_tests: [not_null]
+      - name: swap_usd
+        description: Overnight financing in USD.
+      - name: adjustment_usd
+        description: Broker cash adjustments booked against the position (e.g. commodity contract roll).
+      - name: net_pnl_usd
+        description: realized_pnl_usd + swap_usd + adjustment_usd.
+        data_tests: [not_null]
+      - name: outcome
+        description: win / loss / breakeven based on net P&L.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [win, loss, breakeven]
+
+  - name: int_position_modifications
+    description: >
+      One row per stop-loss / take-profit change. Each MODIFIED execution is compared
+      with the levels in force just before it, and the stop-loss change is
+      classified relative to the position's side.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [position_id, modification_number]
+    columns:
+      - name: exec_id
+        description: The MODIFIED execution. Primary key.
+        data_tests: [unique, not_null]
+      - name: position_id
+        description: Position that was modified.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_positions')
+                field: position_id
+      - name: modification_number
+        description: 1 for the first change on the position, 2 for the second, and so on.
+      - name: modified_at_utc
+        description: Time of the change, UTC.
+      - name: previous_stop_loss
+        description: Stop-loss level before the change.
+      - name: stop_loss
+        description: Stop-loss level after the change.
+      - name: previous_take_profit
+        description: Take-profit level before the change.
+      - name: take_profit
+        description: Take-profit level after the change.
+      - name: is_stop_loss_changed
+        description: True if the stop-loss level changed.
+      - name: is_take_profit_changed
+        description: True if the take-profit level changed.
+      - name: stop_loss_change
+        description: >
+          added / removed / tightened (moved in the trade's favour) /
+          loosened (moved further away, more risk) / unchanged.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [added, removed, tightened, loosened, unchanged]
+      - name: is_stop_at_or_past_entry
+        description: True if the new stop-loss sits at or beyond the entry price, so the trade can no longer lose on the stop.
+
+  - name: int_ledger_transactions
+    description: >
+      Processed cash movements from the ledger (DECLINED rows removed), each
+      with a cash-flow category.
+    columns:
+      - name: fund_transaction_id
+        description: Ledger row id. Primary key.
+        data_tests: [unique, not_null]
+      - name: transaction_type
+        description: Broker transaction type.
+      - name: cash_flow_category
+        description: funding / trading_pnl / financing / rebate / adjustment.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [funding, trading_pnl, financing, rebate, adjustment]
+      - name: amount_usd
+        description: Signed amount in USD.
+      - name: balance_usd
+        description: Broker-reported balance after this movement.
+      - name: exec_id
+        description: Execution that produced the movement (TRADE rows only).
+      - name: instrument_symbol
+        description: Instrument on TRADE rows.
+      - name: modified_at_utc
+        description: Booking time, UTC.
+      - name: transaction_date
+        description: Booking date, UTC.

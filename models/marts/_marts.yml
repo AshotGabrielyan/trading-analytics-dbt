@@ -1,0 +1,332 @@
+version: 2
+
+models:
+  - name: dim_instruments
+    description: One row per traded instrument, with asset class (from the `instrument_asset_classes` seed) and first/last trade time.
+    columns:
+      - name: instrument_symbol
+        description: Broker instrument symbol. Primary key.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('instrument_asset_classes')
+                field: instrument_symbol
+      - name: instrument_name
+        description: Long instrument name.
+      - name: asset_class
+        description: crypto / commodity / fx / equity / index.
+        data_tests: [not_null]
+      - name: instrument_currency
+        description: Quote currency.
+      - name: first_traded_at_utc
+        description: First execution on this instrument, UTC.
+      - name: last_traded_at_utc
+        description: Last execution on this instrument, UTC.
+
+  - name: dim_dates
+    description: >
+      Calendar spine built with `dbt_utils.date_spine`, one row per day from the
+      `calendar_start_date` var through today.
+    columns:
+      - name: date_day
+        description: Calendar date. Primary key.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.sequential_values:
+              arguments:
+                interval: 1
+                datepart: day
+      - name: week_start_date
+        description: Monday of the ISO week.
+      - name: month_start_date
+        description: First day of the month.
+      - name: year_number
+        description: Calendar year.
+      - name: month_number
+        description: Month, 1-12.
+      - name: iso_day_of_week
+        description: 1 = Monday ... 7 = Sunday.
+      - name: day_name
+        description: Day name, e.g. Monday.
+      - name: is_weekend
+        description: True on Saturday and Sunday.
+
+  - name: fct_positions
+    description: >
+      One row per closed position, with instrument attributes. The main fact for
+      trade-performance analysis. P&L columns are in USD. Net P&L includes swaps
+      and broker adjustments; rebates are account-level and live in the ledger.
+    columns:
+      - name: position_id
+        description: Broker "Trade Id". Primary key.
+        data_tests: [unique, not_null]
+      - name: instrument_symbol
+        description: Instrument traded.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_instruments')
+                field: instrument_symbol
+      - name: asset_class
+        description: Asset class of the instrument.
+        data_tests: [not_null]
+      - name: side
+        description: long / short.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [long, short]
+      - name: position_size
+        description: Absolute size opened.
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: open_price
+        description: Entry price.
+      - name: avg_close_price
+        description: Size-weighted average exit price.
+      - name: initial_stop_loss
+        description: Stop-loss on entry, if any.
+      - name: initial_take_profit
+        description: Take-profit on entry, if any.
+      - name: has_initial_stop_loss
+        description: True if the position was opened with a stop-loss.
+      - name: has_initial_take_profit
+        description: True if the position was opened with a take-profit.
+      - name: stop_loss_timing
+        description: "'at open', 'added later' (by a modification) or 'never'."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['at open', 'added later', 'never']
+      - name: take_profit_timing
+        description: "'at open', 'added later' (by a modification) or 'never'."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['at open', 'added later', 'never']
+      - name: opened_at_utc
+        description: Entry time, UTC.
+      - name: closed_at_utc
+        description: Final close time, UTC.
+      - name: opened_date
+        description: Entry date, UTC.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: closed_date
+        description: Final close date, UTC.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: hold_hours
+        description: Hours from open to final close.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: exit_reason
+        description: USER / SL / TP / CLOSE_OUT. What triggered the final close.
+      - name: n_closes
+        description: Number of closing executions.
+      - name: is_partially_closed
+        description: True if closed in more than one execution.
+      - name: n_modifications
+        description: Number of SL/TP changes.
+      - name: n_swaps
+        description: Number of overnight financing charges.
+      - name: realized_pnl_usd
+        description: Realized trading P&L.
+      - name: swap_usd
+        description: Overnight financing.
+      - name: adjustment_usd
+        description: Broker cash adjustments on the position.
+      - name: net_pnl_usd
+        description: realized + swap + adjustment.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= realized_pnl_usd + swap_usd + adjustment_usd"
+      - name: outcome
+        description: win / loss / breakeven on net P&L.
+
+  - name: fct_ledger_transactions
+    description: >
+      One row per processed cash movement. Includes the broker balance, a running
+      balance rebuilt from amounts (they must match, see
+      `assert_ledger_rebuilds_balance`) and the position behind each TRADE row.
+    columns:
+      - name: fund_transaction_id
+        description: Ledger row id. Primary key.
+        data_tests: [unique, not_null]
+      - name: transaction_type
+        description: Broker transaction type.
+      - name: cash_flow_category
+        description: funding / trading_pnl / financing / rebate / adjustment.
+        data_tests: [not_null]
+      - name: amount_usd
+        description: Signed amount.
+      - name: balance_usd
+        description: Balance after the movement, as reported by the broker.
+      - name: running_balance_usd
+        description: Cumulative sum of amount_usd in booking order.
+      - name: exec_id
+        description: Execution behind a TRADE row.
+      - name: position_id
+        description: Position behind a TRADE row.
+        data_tests:
+          - not_null:
+              config:
+                where: "transaction_type = 'TRADE'"
+          - relationships:
+              arguments:
+                to: ref('fct_positions')
+                field: position_id
+      - name: instrument_symbol
+        description: Instrument on TRADE rows.
+      - name: modified_at_utc
+        description: Booking time, UTC.
+      - name: transaction_date
+        description: Booking date, UTC.
+
+  - name: fct_daily_pnl
+    description: >
+      One row per calendar day. Cash flows by category come from the ledger, so
+      they reconcile to the balance. Position counts are by final close date.
+      `net_trading_result_usd` covers everything except funding.
+    columns:
+      - name: date_day
+        description: Calendar date. Primary key.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: realized_pnl_usd
+        description: Realized trade P&L booked that day.
+      - name: swap_usd
+        description: Overnight financing booked that day.
+      - name: rebate_usd
+        description: Broker rebates.
+      - name: adjustment_usd
+        description: Broker adjustments (negative balance protection, corrections, commodity cash adjustments).
+      - name: deposits_usd
+        description: Deposits.
+      - name: withdrawals_usd
+        description: Withdrawals (negative).
+      - name: n_positions_closed
+        description: Positions whose final close fell on this day.
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= n_wins + n_losses"
+      - name: n_wins
+        description: Winning positions closed that day.
+      - name: n_losses
+        description: Losing positions closed that day.
+      - name: net_trading_result_usd
+        description: realized + swap + rebate + adjustment.
+      - name: cumulative_trading_result_usd
+        description: Running total of net_trading_result_usd.
+
+  - name: fct_account_balance_daily
+    description: >
+      End-of-day account balance for every calendar day (carried forward on quiet
+      days), cumulative net funding and cumulative trading result. Drawdown is
+      measured on the trading result, so deposits don't hide losses.
+    columns:
+      - name: date_day
+        description: Calendar date. Primary key.
+        data_tests: [unique, not_null]
+      - name: balance_usd
+        description: Broker balance at end of day.
+        data_tests: [not_null]
+      - name: cumulative_net_funding_usd
+        description: Deposits minus withdrawals to date.
+      - name: cumulative_trading_result_usd
+        description: Trading result to date (everything except funding).
+      - name: peak_trading_result_usd
+        description: Highest cumulative trading result reached so far.
+      - name: drawdown_usd
+        description: Cumulative trading result minus its running peak (0 or negative).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+
+  - name: mart_performance_by_instrument
+    description: >
+      Trade-performance KPIs per instrument. Metric definitions are shared with
+      `mart_performance_summary` through the `position_performance_metrics` macro.
+      Win rate counts breakeven positions as non-wins. Profit factor = gross profit /
+      gross loss (null when there are no losses).
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "abs(pct_exit_take_profit + pct_exit_stop_loss + pct_exit_manual + pct_exit_close_out - 1) < 0.001"
+    columns:
+      - name: instrument_symbol
+        description: Instrument. Primary key.
+        data_tests: [unique, not_null]
+      - name: asset_class
+        description: Asset class.
+      - name: n_positions
+        description: Closed positions.
+      - name: win_rate
+        description: Share of positions with positive net P&L.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1}
+      - name: net_pnl_usd
+        description: Total net P&L.
+      - name: profit_factor
+        description: Gross profit / gross loss.
+      - name: expectancy_usd
+        description: Average net P&L per position.
+      - name: avg_win_usd
+        description: Average net P&L of winners.
+      - name: avg_loss_usd
+        description: Average net P&L of losers.
+      - name: pct_exit_stop_loss
+        description: Share of positions closed by stop-loss.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pct_exit_take_profit
+        description: Share of positions closed by take-profit.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1}
+
+  - name: mart_performance_summary
+    description: >
+      One row of headline KPIs for the whole account: trading performance, cash
+      flows, ending balance and max drawdown.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "n_wins + n_losses <= n_positions"
+    columns:
+      - name: n_positions
+        description: Closed positions.
+        data_tests: [not_null]
+      - name: net_pnl_usd
+        description: Total net P&L across positions.
+      - name: ending_balance_usd
+        description: Last broker balance.
+      - name: max_drawdown_usd
+        description: Deepest fall of the cumulative trading result from its peak.
