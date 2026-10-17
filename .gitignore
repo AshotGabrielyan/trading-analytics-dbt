@@ -27,3 +27,6 @@ metabase/.admin_credentials
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+
+# Personal notes (local only)
+notes/
